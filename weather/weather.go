@@ -6,6 +6,7 @@ package weather
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -55,6 +56,10 @@ func GetForecast(gridId string, gridX, gridY int) ([]*ForecastPeriod, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("weather api error: %s", resp.Status)
+	}
+
 	decoder := json.NewDecoder(resp.Body)
 
 	f := forecast{}
@@ -73,6 +78,9 @@ func GetForecast(gridId string, gridX, gridY int) ([]*ForecastPeriod, error) {
 			WindDirection: v.WindDirection,
 			ShortForecast: v.ShortForecast,
 		})
+	}
+	if len(periods) == 0 {
+		return nil, errors.New("received no forecast periods from the weather API")
 	}
 	return periods, nil
 }
