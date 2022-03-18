@@ -33,7 +33,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleData(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Handling data request from: %s", r.RemoteAddr)
+	origin := r.RemoteAddr
+	if f := r.Header.Get("X-Forwarded-For"); f != "" {
+		origin = origin + ", X-Forwarded-For=" + f
+	}
+	log.Printf("Handling data request from: %s", origin)
 	recentData, ok := mostRecentData.Load().(data)
 	if !ok {
 		errorResponse(w, 500, "Error getting the forecast")
