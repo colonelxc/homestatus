@@ -8,8 +8,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 )
+
+// minimal type for extracting forecast url from lat/long metadata query
+type point struct {
+	Properties struct {
+		Forecast string `json:"forecast"`
+	} `json:"properties"`
+}
 
 // internal forcast type, for parsing from json
 type forecast struct {
@@ -42,25 +50,28 @@ type ForecastPeriod struct {
 	ShortForecast string // ex: "Light Rain Likely"
 }
 
+func GetForecastUrl(lat, long string) (string, error) {
+	decoder, closer, err := doRequest(fmt.Sprintf("https://api.weather.gov/points/%s,%s", lat, long))
+	if err != nil {
+		return "", err
+	}
+	defer closer()
+
+	p := point{}
+	err = decoder.Decode(&p)
+	if err != nil {
+		return "", fmt.Errorf("error reading forecast points json: %w", err)
+	}
+	return p.Properties.Forecast, nil
+}
+
 // Forecast periods are returned in order.
-func GetForecast(gridId string, gridX, gridY int) ([]*ForecastPeriod, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.weather.gov/gridpoints/%s/%d,%d/forecast", gridId, gridX, gridY), nil)
+func GetForecast(forecastUrl string) ([]*ForecastPeriod, error) {
+	decoder, closer, err := doRequest(forecastUrl)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "HomeStatus/1.0 (http://github.com/colonelxc/homestatus)")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("weather api error: %s", resp.Status)
-	}
-
-	decoder := json.NewDecoder(resp.Body)
+	defer closer()
 
 	f := forecast{}
 	err = decoder.Decode(&f)
@@ -83,4 +94,25 @@ func GetForecast(gridId string, gridX, gridY int) ([]*ForecastPeriod, error) {
 		return nil, errors.New("received no forecast periods from the weather API")
 	}
 	return periods, nil
+}
+
+func doRequest(url string) (*json.Decoder, func() error, error) {
+	log.Printf("Requesting url: %s", url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("User-Agent", "HomeStatus/1.0 (http://github.com/colonelxc/homestatus)")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, nil, fmt.Errorf("weather api error: %s", resp.Status)
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	return decoder, resp.Body.Close, nil
 }

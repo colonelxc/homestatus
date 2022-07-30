@@ -3,8 +3,9 @@ Description=HomeStatus server
 After=network.target
 
 [Service]
-ExecStart=/opt/homestatus/homestatus
-Restart=on-failure
+EnvironmentFile=/opt/homestatus/config
+ExecStart=/opt/homestatus/homestatus --latitude=${LATITUDE} --longitude=${LONGITUDE}
+Restart=always
 KillSignal=SIGINT
 
 #lockdown

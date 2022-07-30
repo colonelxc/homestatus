@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"html"
 	"log"
@@ -13,19 +14,38 @@ import (
 	"github.com/colonelxc/homestatus/weather"
 )
 
+var (
+	lat  = flag.String("latitude", "", "Latitude for weather data")
+	long = flag.String("longitude", "", "Longitude for weather data")
+	port = flag.Int("port", 8080, "port to run on (listens on localhost)")
+)
+
 type data struct {
 	updateTime time.Time
 	periods    []*weather.ForecastPeriod
 }
 
-var mostRecentData atomic.Value
+var (
+	mostRecentData atomic.Value
+)
 
 func main() {
-	doUpdate(time.Now())
-	go backgroundUpdater(time.Hour)
+	flag.Parse()
+	if *lat == "" || *long == "" {
+		fmt.Println("latitude and longitude required")
+		return
+	}
+
+	forecastUrl, err := weather.GetForecastUrl(*lat, *long)
+	if err != nil {
+		log.Fatalf("Could not get the forecast url: %w", err)
+	}
+
+	doUpdate(time.Now(), forecastUrl)
+	go backgroundUpdater(time.Hour, forecastUrl)
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/data", handleData)
-	http.ListenAndServe("127.0.0.1:8080", nil)
+	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", *port), nil)
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -81,16 +101,16 @@ func errorResponse(w http.ResponseWriter, code int, msg string) {
 	fmt.Fprintln(w, msg)
 }
 
-func backgroundUpdater(d time.Duration) {
+func backgroundUpdater(d time.Duration, forecastUrl string) {
 	ticker := time.NewTicker(d)
 	for t := range ticker.C {
-		doUpdate(t)
+		doUpdate(t, forecastUrl)
 	}
 }
 
-func doUpdate(t time.Time) {
+func doUpdate(t time.Time, forecastUrl string) {
 	log.Println("Performing data update")
-	periods, err := weather.GetForecast("SEW", 128, 69)
+	periods, err := weather.GetForecast(forecastUrl)
 	if err != nil {
 		log.Printf("Error getting the forecast %s", err)
 		return
